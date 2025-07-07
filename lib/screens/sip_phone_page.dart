@@ -15,6 +15,8 @@ import '../utils/call_history_helper.dart';
 import '../utils/sip_permissions_helper.dart';
 import '../utils/sip_registration_helper.dart';
 import '../widgets/phone_keypad/phone_keypad.dart';
+import '../utils/call_helpers.dart';
+import '../widgets/custom_app_bar.dart';
 
 class SipPhonePage extends StatefulWidget {
   final String username;
@@ -41,286 +43,6 @@ class _SipPhonePageState extends State<SipPhonePage>
       password: password,
     );
     _helper.start(settings);
-  }
-
-  void _hangUp() {
-    if (_currentCall != null) {
-      _currentCall!.hangup();
-      _stopCallTimer();
-      setState(() {
-        _currentCall = null;
-        _isMuted = false;
-        _isSpeakerOn = false;
-        _callDurationSeconds = 0;
-      });
-    }
-  }
-
-  void _toggleMute() {
-    if (_currentCall != null) {
-      setState(() {
-        if (_isMuted) {
-          _currentCall!.unmute();
-        } else {
-          _currentCall!.mute();
-        }
-        _isMuted = !_isMuted;
-      });
-    }
-  }
-
-  void _toggleSpeaker() {
-    setState(() {
-      Helper.setSpeakerphoneOn(!_isSpeakerOn);
-      _isSpeakerOn = !_isSpeakerOn;
-    });
-  }
-
-  void _toggleHold() {
-    if (_currentCall != null) {
-      if (_currentCall!.state == CallStateEnum.HOLD) {
-        _currentCall!.unhold();
-      } else {
-        _currentCall!.hold();
-      }
-      setState(() {
-        _status = _currentCall!.state == CallStateEnum.HOLD
-            ? 'Call on Hold'
-            : 'Call Resumed';
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Show CallPopup for outgoing calls in PROGRESS, CONFIRMED, or HOLD states
-    if (_currentCall != null &&
-        ((_currentCall!.state == CallStateEnum.CONFIRMED ||
-                _currentCall!.state == CallStateEnum.HOLD) ||
-            (_currentCall!.state == CallStateEnum.PROGRESS &&
-                _currentCall?.direction != "INCOMING"))) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (ModalRoute.of(context)?.isCurrent ?? true) {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (ctx) => CallPopup(
-              number: _remoteNumber.isNotEmpty
-                  ? _remoteNumber
-                  : _numberController.text,
-              status: _status,
-              isMuted: _isMuted,
-              isSpeakerOn: _isSpeakerOn,
-              onHangUp: _hangUp,
-              onToggleMute: _toggleMute,
-              onToggleSpeaker: _toggleSpeaker,
-              onToggleHold: _toggleHold,
-              onTransferCall: _transferCall,
-              callDurationSeconds: _callDurationSeconds,
-              isIncoming: _currentCall?.direction == "INCOMING",
-            ),
-          );
-        }
-      });
-    }
-
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: ShaderMask(
-          shaderCallback: (Rect bounds) {
-            return LinearGradient(
-              colors: [
-                Colors.blueAccent.withOpacity(0.8),
-                Colors.purpleAccent.withOpacity(0.8),
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ).createShader(bounds);
-          },
-          child: const Text('SIP Phone FE'),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'Call History',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) =>
-                      CallHistoryPage(callHistory: _callHistory),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'Profile/Settings',
-            onPressed: () async {
-              final result = await Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (context) => ProfileSettingsPage(
-                    initialUsername: widget.username,
-                    initialPassword: widget.password,
-                  ),
-                ),
-              );
-              if (result == true) {
-                final prefs = await SharedPreferences.getInstance();
-                final newUsername =
-                    prefs.getString('username') ?? widget.username;
-                final newPassword =
-                    prefs.getString('password') ?? widget.password;
-                setState(() {
-                  _status = 'Re-registering...';
-                });
-                _helper.removeSipUaHelperListener(this);
-                _helper.addSipUaHelperListener(this);
-                _helper.stop();
-                Future.delayed(const Duration(milliseconds: 500), () {
-                  _registerWithCredentials(newUsername, newPassword);
-                });
-              }
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Logout',
-            onPressed: _logout,
-          ),
-        ],
-        systemOverlayStyle: Theme.of(context).brightness == Brightness.dark
-            ? null
-            : const SystemUiOverlayStyle(
-                statusBarColor: Colors.transparent,
-                statusBarIconBrightness: Brightness.dark,
-              ),
-      ),
-      body: Align(
-        alignment: Alignment.bottomCenter,
-        child: Padding(
-          padding: const EdgeInsets.only(bottom: 32, left: 16, right: 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              const Spacer(),
-
-              // Status display
-              Text(
-                _status,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.indigo,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Number display
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 24,
-                ),
-
-                child: Center(
-                  child: Text(
-                    _numberController.text.isEmpty
-                        ? 'Enter number'
-                        : _numberController.text,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: Colors.black87,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 18),
-              // Phone keypad
-              PhoneKeypad(
-                onInput: (val) {
-                  _numberController.text += val;
-                  setState(() {});
-                },
-                onDelete: () {
-                  if (_numberController.text.isNotEmpty) {
-                    _numberController.text = _numberController.text.substring(
-                      0,
-                      _numberController.text.length - 1,
-                    );
-                    setState(() {});
-                  }
-                },
-                onCall: _isRegistered ? _makeCall : () {},
-                callEnabled: _isRegistered,
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  final TextEditingController _numberController = TextEditingController();
-  final SIPUAHelper _helper = SIPUAHelper();
-  String _status = 'Not Registered';
-  bool _isRegistered = false;
-  Call? _currentCall;
-  bool _isMuted = false;
-  bool _isSpeakerOn = false;
-  List<Map<String, dynamic>> _callHistory = [];
-  final RingtoneHelper _ringtoneHelper = RingtoneHelper();
-
-  @override
-  void transportStateChanged(TransportState state) {}
-
-  @override
-  void onNewMessage(SIPMessageRequest msg) {}
-
-  @override
-  void onNewNotify(Notify notify) {}
-
-  @override
-  void onNewReinvite(ReInvite invite) {}
-
-  Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isLoggedIn', false);
-    await prefs.remove('username');
-    await prefs.remove('password');
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => const LoginPage()),
-    );
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _helper.addSipUaHelperListener(this);
-    _register();
-    _loadCallHistory();
-  }
-
-  void _register() {
-    final settings = SipRegistrationHelper.buildSettings(
-      username: widget.username,
-      password: widget.password,
-    );
-    _helper.start(settings);
-  }
-
-  Future<bool> _requestPermissions() async {
-    return await SipPermissionsHelper.requestPermissions(context);
   }
 
   void _makeCall() async {
@@ -553,6 +275,107 @@ class _SipPhonePageState extends State<SipPhonePage>
     return false;
   }
 
+  final TextEditingController _numberController = TextEditingController();
+  final SIPUAHelper _helper = SIPUAHelper();
+  String _status = 'Not Registered';
+  bool _isRegistered = false;
+  Call? _currentCall;
+  bool _isMuted = false;
+  bool _isSpeakerOn = false;
+  List<Map<String, dynamic>> _callHistory = [];
+  final RingtoneHelper _ringtoneHelper = RingtoneHelper();
+
+  @override
+  void transportStateChanged(TransportState state) {}
+
+  @override
+  void onNewMessage(SIPMessageRequest msg) {}
+
+  @override
+  void onNewNotify(Notify notify) {}
+
+  @override
+  void onNewReinvite(ReInvite invite) {}
+
+  Future<void> _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isLoggedIn', false);
+    await prefs.remove('username');
+    await prefs.remove('password');
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _helper.addSipUaHelperListener(this);
+    _register();
+    _loadCallHistory();
+  }
+
+  void _register() {
+    final settings = SipRegistrationHelper.buildSettings(
+      username: widget.username,
+      password: widget.password,
+    );
+    _helper.start(settings);
+  }
+
+  Future<bool> _requestPermissions() async {
+    return await SipPermissionsHelper.requestPermissions(context);
+  }
+
+  void _hangUp() {
+    if (_currentCall != null) {
+      _currentCall!.hangup();
+      _stopCallTimer();
+      setState(() {
+        _currentCall = null;
+        _isMuted = false;
+        _isSpeakerOn = false;
+        _callDurationSeconds = 0;
+      });
+    }
+  }
+
+  void _toggleMute() {
+    if (_currentCall != null) {
+      if (_isMuted) {
+        _currentCall!.unmute();
+      } else {
+        _currentCall!.mute();
+      }
+      setState(() {
+        _isMuted = !_isMuted;
+      });
+    }
+  }
+
+  void _toggleSpeaker() {
+    Helper.setSpeakerphoneOn(!_isSpeakerOn);
+    setState(() {
+      _isSpeakerOn = !_isSpeakerOn;
+    });
+  }
+
+  void _toggleHold() {
+    if (_currentCall != null) {
+      if (_currentCall!.state == CallStateEnum.HOLD) {
+        _currentCall!.unhold();
+      } else {
+        _currentCall!.hold();
+      }
+      setState(() {
+        _status = _currentCall!.state == CallStateEnum.HOLD
+            ? 'Call on Hold'
+            : 'Call Resumed';
+      });
+    }
+  }
+
   void _transferCall() async {
     if (_currentCall != null) {
       final transferNumber = await showDialog<String>(
@@ -603,5 +426,130 @@ class _SipPhonePageState extends State<SipPhonePage>
         });
       }
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Show CallPopup for ongoing calls
+    if (_currentCall != null &&
+        (_currentCall!.state == CallStateEnum.CONFIRMED ||
+         _currentCall!.state == CallStateEnum.HOLD ||
+         _currentCall!.state == CallStateEnum.PROGRESS)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (ModalRoute.of(context)?.isCurrent ?? true) {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (ctx) => CallPopup(
+              number: _remoteNumber.isNotEmpty
+                  ? _remoteNumber
+                  : _numberController.text,
+              status: _status,
+              isMuted: _isMuted,
+              isSpeakerOn: _isSpeakerOn,
+              onHangUp: () => CallPopupHandlers.hangUp(_currentCall, setState),
+              onToggleMute: () => CallPopupHandlers.toggleMute(_currentCall, _isMuted, setState),
+              onToggleSpeaker: () => CallPopupHandlers.toggleSpeaker(_isSpeakerOn, setState),
+              onToggleHold: () => CallPopupHandlers.toggleHold(_currentCall, setState),
+              onTransferCall: () => CallPopupHandlers.transferCall(context, _currentCall, setState),
+              callDurationSeconds: _callDurationSeconds,
+              isIncoming: _currentCall?.direction == "INCOMING",
+            ),
+          );
+        }
+      });
+    }
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: CustomAppBar(
+        title: 'SIP Phone FE',
+        onHistory: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => CallHistoryPage(callHistory: []),
+            ),
+          );
+        },
+        onSettings: () async {
+          final result = await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => ProfileSettingsPage(
+                initialUsername: widget.username,
+                initialPassword: widget.password,
+              ),
+            ),
+          );
+          if (result == true) {
+            setState(() {
+              // Updated status
+            });
+          }
+        },
+        onLogout: () async {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('isLoggedIn', false);
+          await prefs.remove('username');
+          await prefs.remove('password');
+          if (!mounted) return;
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(builder: (context) => const LoginPage()),
+          );
+        },
+      ),
+      body: Align(
+        alignment: Alignment.bottomCenter,
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 32, left: 16, right: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              const Spacer(),
+              Text(
+                'Status Placeholder',
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.indigo,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  vertical: 16,
+                  horizontal: 24,
+                ),
+                child: Center(
+                  child: Text(
+                    'Enter number',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              PhoneKeypad(
+                onInput: (val) {
+                  // Handle input
+                },
+                onDelete: () {
+                  // Handle delete
+                },
+                onCall: () {},
+                callEnabled: false,
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
