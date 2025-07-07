@@ -58,20 +58,20 @@ class _SipPhonePageState extends State<SipPhonePage>
 
   void _toggleMute() {
     if (_currentCall != null) {
-      if (_isMuted) {
-        _currentCall!.unmute();
-      } else {
-        _currentCall!.mute();
-      }
       setState(() {
+        if (_isMuted) {
+          _currentCall!.unmute();
+        } else {
+          _currentCall!.mute();
+        }
         _isMuted = !_isMuted;
       });
     }
   }
 
   void _toggleSpeaker() {
-    Helper.setSpeakerphoneOn(!_isSpeakerOn);
     setState(() {
+      Helper.setSpeakerphoneOn(!_isSpeakerOn);
       _isSpeakerOn = !_isSpeakerOn;
     });
   }
