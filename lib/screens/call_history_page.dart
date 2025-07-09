@@ -304,7 +304,7 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
                         itemBuilder: (context, i) {
                           final call = filteredHistory[i];
                           final timeAgo = formatTimeAgo(
-                            DateTime.parse(call['time']),
+                            DateTime.tryParse(call['time']) ?? DateTime.now(),
                           );
                           return ListTile(
                             leading: CircleAvatar(

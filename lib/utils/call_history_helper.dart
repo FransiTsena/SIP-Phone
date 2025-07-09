@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 class CallHistoryHelper {
   static Future<void> addCallHistory(
@@ -14,9 +15,9 @@ class CallHistoryHelper {
       'time': now.toIso8601String(),
     };
     final prefs = await SharedPreferences.getInstance();
-    // prefs.clear(); // Clear previous history for testing purposes
     final history = prefs.getStringList('callHistory') ?? [];
-    history.insert(0, entry.toString());
+    // Use JSON encoding for each entry
+    history.insert(0, jsonEncode(entry));
     await prefs.setStringList('callHistory', history.take(100).toList());
   }
 
@@ -35,19 +36,23 @@ class CallHistoryHelper {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> loadCallHistory() async {
+  /// Loads call history and adds a 'timeAgo' field for UI display.
+  /// Optionally sorts and filters the result.
+  static Future<List<Map<String, dynamic>>> loadCallHistory({
+    String sortType = 'newest',
+    String? filterType, // e.g. 'missed', 'answered', etc.
+  }) async {
     final prefs = await SharedPreferences.getInstance();
     final history = prefs.getStringList('callHistory') ?? [];
-    return history
+    List<Map<String, dynamic>> parsed = history
         .map((e) {
           try {
             final entry = _parseMapString(e);
             if (entry['time'] != null &&
                 DateTime.tryParse(entry['time']) != null) {
-              entry['timeAgo'] = formatTimeAgo(DateTime.parse(entry['time']));
+              entry['time'] = formatTimeAgo(DateTime.parse(entry['time']));
             } else {
               entry['time'] = DateTime.now().toIso8601String();
-              entry['timeAgo'] = 'just now';
             }
             return entry;
           } catch (_) {
@@ -57,17 +62,59 @@ class CallHistoryHelper {
         .where((e) => e.isNotEmpty)
         .toList()
         .cast<Map<String, dynamic>>();
+
+    // Optional filtering
+    if (filterType != null && filterType.isNotEmpty) {
+      parsed = parsed
+          .where(
+            (e) =>
+                (e['status'] ?? '').toLowerCase() == filterType.toLowerCase(),
+          )
+          .toList();
+    }
+
+    // Sorting
+    parsed = sortCallHistory(parsed, sortType);
+    return parsed;
+  }
+
+  /// Sorts call history by the given type: 'newest', 'oldest', 'missed', 'answered'.
+  static List<Map<String, dynamic>> sortCallHistory(
+    List<Map<String, dynamic>> history,
+    String sortType,
+  ) {
+    List<Map<String, dynamic>> sorted = List.from(history);
+    switch (sortType) {
+      case 'oldest':
+        sorted.sort((a, b) => (a['time'] ?? '').compareTo(b['time'] ?? ''));
+        break;
+      case 'missed':
+        sorted.sort(
+          (a, b) =>
+              (b['status'] == 'missed' ? 1 : 0) -
+              (a['status'] == 'missed' ? 1 : 0),
+        );
+        break;
+      case 'answered':
+        sorted.sort(
+          (a, b) =>
+              (b['status'] == 'answered' ? 1 : 0) -
+              (a['status'] == 'answered' ? 1 : 0),
+        );
+        break;
+      case 'newest':
+      default:
+        sorted.sort((a, b) => (b['time'] ?? '').compareTo(a['time'] ?? ''));
+        break;
+    }
+    return sorted;
   }
 
   static Map<String, dynamic> _parseMapString(String s) {
-    s = s.replaceAll(RegExp(r'[{}]'), '');
-    final map = <String, dynamic>{};
-    for (final part in s.split(',')) {
-      final kv = part.split(':');
-      if (kv.length == 2) {
-        map[kv[0].trim()] = kv[1].trim();
-      }
+    try {
+      return jsonDecode(s) as Map<String, dynamic>;
+    } catch (_) {
+      return {};
     }
-    return map;
   }
 }

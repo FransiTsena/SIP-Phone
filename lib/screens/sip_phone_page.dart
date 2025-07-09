@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'package:flutter/services.dart';
 import 'package:sip_ua/sip_ua.dart';
 import 'call_popup.dart';
 import 'login_page.dart';
@@ -9,13 +8,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'call_history_page.dart';
 import 'incoming_call_popup.dart';
 import 'profile_settings_page.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' show Helper;
+// import 'package:flutter_webrtc/flutter_webrtc.dart' show Helper;
 import '../utils/ringtone_helper.dart';
 import '../utils/call_history_helper.dart';
 import '../utils/sip_permissions_helper.dart';
 import '../utils/sip_registration_helper.dart';
 import '../widgets/phone_keypad/phone_keypad.dart';
-import '../utils/call_helpers.dart';
+// import '../utils/call_helpers.dart';
 import '../widgets/custom_app_bar.dart';
 
 class SipPhonePage extends StatefulWidget {
@@ -46,33 +45,61 @@ class _SipPhonePageState extends State<SipPhonePage>
   }
 
   void _makeCall() async {
-    if (!await _requestPermissions()) {
+    try {
+      if (!await _requestPermissions()) {
+        setState(() {
+          _status = 'Microphone or camera permission denied';
+        });
+        return;
+      }
+      final number = _numberController.text.trim();
+      final ip = '10.42.0.17';
+      final validNumber = RegExp(r'^\d{2,}');
+      if (number.isEmpty) {
+        setState(() {
+          _status = 'Please enter a phone number.';
+        });
+        return;
+      }
+      if (!validNumber.hasMatch(number)) {
+        setState(() {
+          _status = 'Invalid number format. Use only digits.';
+        });
+        return;
+      }
+      final sipUri = 'sip:$number@$ip';
+      if (kDebugMode) {
+        print('Dialing: $sipUri');
+      }
+      await _addCallHistory(number, 'outgoing', 'Dialing');
+      try {
+        _helper.call(sipUri, voiceOnly: true);
+      } catch (e, st) {
+        if (kDebugMode) {
+          print('Error in SIP call: $e\n$st');
+        }
+        setState(() {
+          _status = 'Call failed: $e';
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Call failed: $e')));
+        }
+      }
+    } catch (e, st) {
+      if (kDebugMode) {
+        print('Error making call: $e\n$st');
+      }
       setState(() {
-        _status = 'Microphone or camera permission denied';
+        _status = 'Call failed: $e';
       });
-      return;
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Call failed: $e')));
+      }
     }
-    final number = _numberController.text.trim();
-    final ip = '10.42.0.17';
-    final validNumber = RegExp(r'^\d{2,}$');
-    if (number.isEmpty) {
-      setState(() {
-        _status = 'Please enter a phone number.';
-      });
-      return;
-    }
-    if (!validNumber.hasMatch(number)) {
-      setState(() {
-        _status = 'Invalid number format. Use only digits.';
-      });
-      return;
-    }
-    final sipUri = 'sip:$number@$ip';
-    if (kDebugMode) {
-      print('Dialing: $sipUri');
-    }
-    await _addCallHistory(number, 'outgoing', 'Dialing');
-    _helper.call(sipUri, voiceOnly: true);
   }
 
   Future<void> _addCallHistory(
@@ -328,113 +355,13 @@ class _SipPhonePageState extends State<SipPhonePage>
     return await SipPermissionsHelper.requestPermissions(context);
   }
 
-  void _hangUp() {
-    if (_currentCall != null) {
-      _currentCall!.hangup();
-      _stopCallTimer();
-      setState(() {
-        _currentCall = null;
-        _isMuted = false;
-        _isSpeakerOn = false;
-        _callDurationSeconds = 0;
-      });
-    }
-  }
-
-  void _toggleMute() {
-    if (_currentCall != null) {
-      if (_isMuted) {
-        _currentCall!.unmute();
-      } else {
-        _currentCall!.mute();
-      }
-      setState(() {
-        _isMuted = !_isMuted;
-      });
-    }
-  }
-
-  void _toggleSpeaker() {
-    Helper.setSpeakerphoneOn(!_isSpeakerOn);
-    setState(() {
-      _isSpeakerOn = !_isSpeakerOn;
-    });
-  }
-
-  void _toggleHold() {
-    if (_currentCall != null) {
-      if (_currentCall!.state == CallStateEnum.HOLD) {
-        _currentCall!.unhold();
-      } else {
-        _currentCall!.hold();
-      }
-      setState(() {
-        _status = _currentCall!.state == CallStateEnum.HOLD
-            ? 'Call on Hold'
-            : 'Call Resumed';
-      });
-    }
-  }
-
-  void _transferCall() async {
-    if (_currentCall != null) {
-      final transferNumber = await showDialog<String>(
-        context: context,
-        builder: (ctx) {
-          final TextEditingController transferController =
-              TextEditingController();
-          return AlertDialog(
-            title: const Text('Transfer Call'),
-            content: TextField(
-              controller: transferController,
-              decoration: const InputDecoration(
-                hintText: 'Enter target number',
-              ),
-              keyboardType: TextInputType.phone,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(null),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () =>
-                    Navigator.of(ctx).pop(transferController.text.trim()),
-                child: const Text('Transfer'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (transferNumber != null && transferNumber.isNotEmpty) {
-        final validNumber = RegExp(r'^\d{2,}$');
-        if (!validNumber.hasMatch(transferNumber)) {
-          setState(() {
-            _status = 'Invalid transfer number format. Use only digits.';
-          });
-          return;
-        }
-
-        final transferUri = 'sip:$transferNumber@10.42.0.17';
-        if (kDebugMode) {
-          print('Transferring call to: $transferUri');
-        }
-        _currentCall!.refer(transferUri);
-        setState(() {
-          _status = 'Call transferred to $transferNumber';
-        });
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     // Show CallPopup for ongoing calls
     if (_currentCall != null &&
         (_currentCall!.state == CallStateEnum.CONFIRMED ||
-         _currentCall!.state == CallStateEnum.HOLD ||
-         _currentCall!.state == CallStateEnum.PROGRESS)) {
+            _currentCall!.state == CallStateEnum.HOLD ||
+            _currentCall!.state == CallStateEnum.PROGRESS)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (ModalRoute.of(context)?.isCurrent ?? true) {
           showDialog(
@@ -447,11 +374,97 @@ class _SipPhonePageState extends State<SipPhonePage>
               status: _status,
               isMuted: _isMuted,
               isSpeakerOn: _isSpeakerOn,
-              onHangUp: () => CallPopupHandlers.hangUp(_currentCall, setState),
-              onToggleMute: () => CallPopupHandlers.toggleMute(_currentCall, _isMuted, setState),
-              onToggleSpeaker: () => CallPopupHandlers.toggleSpeaker(_isSpeakerOn, setState),
-              onToggleHold: () => CallPopupHandlers.toggleHold(_currentCall, setState),
-              onTransferCall: () => CallPopupHandlers.transferCall(context, _currentCall, setState),
+              onHangUp: () {
+                _currentCall?.hangup();
+                setState(() {
+                  _currentCall = null;
+                  _isMuted = false;
+                  _isSpeakerOn = false;
+                  _callDurationSeconds = 0;
+                });
+              },
+              onToggleMute: () {
+                setState(() {
+                  _isMuted = !_isMuted;
+                });
+                // TODO: Implement actual mute logic using SIP UA API if available
+              },
+              onToggleSpeaker: () {
+                setState(() {
+                  _isSpeakerOn = !_isSpeakerOn;
+                });
+                // TODO: Implement actual speakerphone logic if needed
+              },
+              onToggleHold: () {
+                if (_currentCall != null) {
+                  if (_currentCall!.state == CallStateEnum.HOLD) {
+                    _currentCall!.unhold();
+                  } else {
+                    _currentCall!.hold();
+                  }
+                  setState(() {});
+                }
+              },
+              onTransferCall: () async {
+                String? target = await showDialog<String>(
+                  context: context,
+                  builder: (context) {
+                    final controller = TextEditingController();
+                    return AlertDialog(
+                      title: const Text('Transfer Call'),
+                      content: TextField(
+                        controller: controller,
+                        decoration: const InputDecoration(
+                          labelText: 'Target Number or SIP URI',
+                        ),
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: const Text('Cancel'),
+                        ),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(context).pop(controller.text.trim()),
+                          child: const Text('Transfer'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+                if (target != null && target.isNotEmpty) {
+                  String uri = target.startsWith('sip:')
+                      ? target
+                      : 'sip:$target@10.42.0.17';
+                  try {
+                    if (kDebugMode) {
+                      print('[TRANSFER] Attempting transfer to: $uri');
+                      print(
+                        '[TRANSFER] Current call state: \\${_currentCall?.state}',
+                      );
+                    }
+                    // Put call on hold before transfer (some servers require this)
+                    if (_currentCall != null &&
+                        _currentCall!.state != CallStateEnum.HOLD) {
+                      print(
+                        '[TRANSFER] Putting call on hold before transfer...',
+                      );
+                      _currentCall!.hold();
+                    }
+                    print('[TRANSFER] Calling refer(uri)');
+                    _currentCall?.refer(uri);
+                    print('[TRANSFER] refer(uri) called');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Transfer initiated to $uri')),
+                    );
+                  } catch (e, st) {
+                    print('[TRANSFER] Transfer failed: $e\n$st');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Transfer failed: $e')),
+                    );
+                  }
+                }
+              },
               callDurationSeconds: _callDurationSeconds,
               isIncoming: _currentCall?.direction == "INCOMING",
             ),
@@ -467,7 +480,7 @@ class _SipPhonePageState extends State<SipPhonePage>
         onHistory: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (context) => CallHistoryPage(callHistory: []),
+              builder: (context) => CallHistoryPage(callHistory: _callHistory),
             ),
           );
         },
@@ -487,14 +500,7 @@ class _SipPhonePageState extends State<SipPhonePage>
           }
         },
         onLogout: () async {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('isLoggedIn', false);
-          await prefs.remove('username');
-          await prefs.remove('password');
-          if (!mounted) return;
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (context) => const LoginPage()),
-          );
+          await _logout();
         },
       ),
       body: Align(
@@ -505,45 +511,68 @@ class _SipPhonePageState extends State<SipPhonePage>
             mainAxisSize: MainAxisSize.max,
             children: [
               const Spacer(),
-              Text(
-                'Status Placeholder',
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.indigo,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 16,
-                  horizontal: 24,
-                ),
-                child: Center(
-                  child: Text(
-                    'Enter number',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: Colors.black87,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+              Center(
+                child: Text(
+                  _numberController.text.isEmpty
+                      ? 'Enter number'
+                      : _numberController.text,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 2,
+                    color: Colors.black87,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               const SizedBox(height: 18),
               PhoneKeypad(
-                onInput: (val) {
-                  // Handle input
+                controller: _numberController,
+                onKeyAdd: (String val) {
+                  setState(() {
+                    _numberController.text += val;
+                  });
                 },
-                onDelete: () {
-                  // Handle delete
+                onKeyDelete: (String text) {
+                  setState(() {
+                    if (text.isNotEmpty) {
+                      _numberController.text = text.substring(
+                        0,
+                        text.length - 1,
+                      );
+                    }
+                  });
                 },
-                onCall: () {},
-                callEnabled: false,
+              ),
+              const SizedBox(height: 18),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 14,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(32),
+                      ),
+                    ),
+                    onPressed: _numberController.text.isNotEmpty
+                        ? _makeCall
+                        : null,
+                    icon: const Icon(Icons.call),
+                    label: const Text('Call'),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
             ],

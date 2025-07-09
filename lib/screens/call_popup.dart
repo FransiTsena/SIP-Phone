@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_webrtc/flutter_webrtc.dart' show Helper;
-import 'package:sip_ua/sip_ua.dart';
 
 String formatDuration(int seconds) {
   final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
@@ -8,105 +6,7 @@ String formatDuration(int seconds) {
   return '$minutes:$secs';
 }
 
-class CallPopupHandlers {
-  static void hangUp(Call? currentCall, Function updateState) {
-    if (currentCall != null) {
-      currentCall.hangup();
-      updateState(() {
-        currentCall = null;
-      });
-    }
-  }
-
-  static void toggleMute(Call? currentCall, bool isMuted, Function updateState) {
-    if (currentCall != null) {
-      if (isMuted) {
-        currentCall.unmute();
-      } else {
-        currentCall.mute();
-      }
-      updateState(() {
-        isMuted = !isMuted;
-      });
-    }
-  }
-
-  static void toggleSpeaker(bool isSpeakerOn, Function updateState) {
-    Helper.setSpeakerphoneOn(!isSpeakerOn);
-    updateState(() {
-      isSpeakerOn = !isSpeakerOn;
-    });
-  }
-
-  static void toggleHold(Call? currentCall, Function updateState) {
-    if (currentCall != null) {
-      if (currentCall.state == CallStateEnum.HOLD) {
-        currentCall.unhold();
-      } else {
-        currentCall.hold();
-      }
-      updateState(() {
-        // Update status or other state variables
-      });
-    }
-  }
-
-  static Future<void> transferCall(
-    BuildContext context,
-    Call? currentCall,
-    Function updateState,
-  ) async {
-    if (currentCall != null) {
-      final transferNumber = await showDialog<String>(
-        context: context,
-        builder: (ctx) {
-          final TextEditingController transferController =
-              TextEditingController();
-          return AlertDialog(
-            title: const Text('Transfer Call'),
-            content: TextField(
-              controller: transferController,
-              decoration: const InputDecoration(
-                hintText: 'Enter target number',
-              ),
-              keyboardType: TextInputType.phone,
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(null),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () =>
-                    Navigator.of(ctx).pop(transferController.text.trim()),
-                child: const Text('Transfer'),
-              ),
-            ],
-          );
-        },
-      );
-
-      if (transferNumber != null && transferNumber.isNotEmpty) {
-        final validNumber = RegExp(r'^\d{2,}$');
-        if (!validNumber.hasMatch(transferNumber)) {
-          updateState(() {
-            // Update status or other state variables
-          });
-          return;
-        }
-
-        final transferUri = 'sip:$transferNumber@10.42.0.17';
-        currentCall.refer(transferUri);
-        updateState(() {
-          // Update status or other state variables
-        });
-      }
-    }
-  }
-}
-
-
-class CallPopup extends StatefulWidget {
+class CallPopup extends StatelessWidget {
   final String number;
   final String status;
   final bool isMuted;
@@ -135,252 +35,313 @@ class CallPopup extends StatefulWidget {
   });
 
   @override
-  State<CallPopup> createState() => _CallPopupState();
-}
-
-class _CallPopupState extends State<CallPopup> {
-  late bool isMuted;
-  late bool isSpeakerOn;
-  bool isOnHold = false;
-
-  @override
-  void initState() {
-    super.initState();
-    isMuted = widget.isMuted;
-    isSpeakerOn = widget.isSpeakerOn;
-  }
-
-  void toggleMute() {
-    widget.onToggleMute();
-    setState(() {
-      isMuted = !isMuted;
-    });
-  }
-
-  void toggleSpeaker() {
-    widget.onToggleSpeaker();
-    setState(() {
-      isSpeakerOn = !isSpeakerOn;
-    });
-  }
-
-  void toggleHold() {
-    widget.onToggleHold();
-    setState(() {
-      isOnHold = !isOnHold;
-    });
-  }
-
-  void transferCall() {
-    widget.onTransferCall();
-    setState(() {
-      // Optionally, you can add a local state for transfer if you want to reflect it visually
-    });
-  }
-
-  @override
   Widget build(BuildContext context) {
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 24,
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return Container(
-            width: constraints.maxWidth * 0.9,
-            height: constraints.maxHeight * 0.8,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(40),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.3),
-                  blurRadius: 32,
-                  offset: const Offset(0, 12),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(40)),
+      child: Container(
+        width: 340,
+        height: 520,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.circular(40),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 32,
+              offset: const Offset(0, 12),
+            ),
+          ],
+          border: Border.all(color: Colors.white.withOpacity(0.08), width: 2),
+        ),
+        child: Stack(
+          children: [
+            // Top bar (signal, wifi, battery)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.04),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(40),
+                  ),
                 ),
-              ],
-              border: Border.all(
-                color: Colors.white.withOpacity(0.08),
-                width: 2,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.signal_cellular_alt,
+                      color: Colors.white.withOpacity(0.7),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.wifi,
+                      color: Colors.white.withOpacity(0.7),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.battery_full,
+                      color: Colors.white.withOpacity(0.7),
+                      size: 18,
+                    ),
+                  ],
+                ),
               ),
             ),
-            child: Column(
-              children: [
-                // Top bar
-                Container(
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.04),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(40),
+            // Avatar and info
+            Positioned(
+              top: 60,
+              left: 0,
+              right: 0,
+              child: Column(
+                children: [
+                  CircleAvatar(
+                    radius: 54,
+                    backgroundColor: Colors.blue[700],
+                    child: Icon(
+                      Icons.phone_in_talk,
+                      color: Colors.white,
+                      size: 54,
                     ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.signal_cellular_alt,
-                        color: Colors.white.withOpacity(0.7),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        Icons.wifi,
-                        color: Colors.white.withOpacity(0.7),
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        Icons.battery_full,
-                        color: Colors.white.withOpacity(0.7),
-                        size: 18,
-                      ),
-                    ],
+                  const SizedBox(height: 18),
+                  Text(
+                    number.isNotEmpty ? number : 'In Call',
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: Colors.white,
+                    ),
                   ),
-                ),
-                // Avatar and info
-                Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      CircleAvatar(
-                        radius: constraints.maxWidth * 0.15,
-                        backgroundColor: Colors.blue[700],
-                        child: Icon(
-                          Icons.phone_in_talk,
-                          color: Colors.white,
-                          size: constraints.maxWidth * 0.15,
-                        ),
+                  const SizedBox(height: 10),
+                  Text(
+                    isIncoming ? 'Incoming Call' : 'In Call',
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: isIncoming
+                          ? Colors.greenAccent[400]
+                          : Colors.blue[200],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (callDurationSeconds > 0)
+                    Text(
+                      formatDuration(callDurationSeconds),
+                      style: const TextStyle(
+                        fontSize: 22,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(height: 18),
-                      Text(
-                        widget.number.isNotEmpty ? widget.number : 'In Call',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 2,
-                          color: Colors.white,
-                        ),
+                    ),
+                  if (callDurationSeconds == 0)
+                    Text(
+                      status,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        color: Colors.white70,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        widget.isIncoming ? 'Incoming Call' : 'In Call',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: widget.isIncoming
-                              ? Colors.greenAccent[400]
-                              : Colors.blue[200],
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (widget.callDurationSeconds > 0)
-                        Text(
-                          formatDuration(widget.callDurationSeconds),
-                          style: const TextStyle(
-                            fontSize: 22,
+                    ),
+                ],
+              ),
+            ),
+            // Controls at the bottom
+            Positioned(
+              bottom: 48,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  // Mute button
+                  GestureDetector(
+                    onTap: onToggleMute,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: isMuted ? Colors.grey : Colors.blue[800],
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.blue.withOpacity(0.18),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isMuted ? Icons.mic_off : Icons.mic,
                             color: Colors.white,
-                            fontWeight: FontWeight.w600,
+                            size: 32,
                           ),
                         ),
-                      if (widget.callDurationSeconds == 0)
+                        const SizedBox(height: 6),
                         Text(
-                          widget.status,
+                          isMuted ? 'Unmute' : 'Mute',
                           style: const TextStyle(
-                            fontSize: 18,
                             color: Colors.white70,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 14,
                           ),
                         ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                // Controls
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _buildControlButton(
-                        icon: isMuted ? Icons.mic_off : Icons.mic,
-                        label: isMuted ? 'Unmute' : 'Mute',
-                        color: isMuted ? Colors.grey : Colors.blue.shade800,
-                        onTap: toggleMute,
-                      ),
-                      _buildControlButton(
-                        icon: isOnHold ? Icons.play_arrow : Icons.pause,
-                        label: isOnHold ? 'Resume' : 'Hold',
-                        color: isOnHold ? Colors.green : Colors.orange,
-                        onTap: toggleHold,
-                      ),
-                      _buildControlButton(
-                        icon: Icons.call_end,
-                        label: 'Hang Up',
-                        color: Colors.red,
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          widget.onHangUp();
-                        },
-                      ),
-                      _buildControlButton(
-                        icon: isSpeakerOn ? Icons.volume_up : Icons.hearing,
-                        label: isSpeakerOn ? 'Speaker Off' : 'Speaker',
-                        color: isSpeakerOn
-                            ? Colors.orange
-                            : Colors.blue.shade800,
-                        onTap: toggleSpeaker,
-                      ),
-                      _buildControlButton(
-                        icon: Icons.call_split,
-                        label: 'Transfer',
-                        color: Colors.blue.shade800,
-                        onTap: transferCall,
-                      ),
-                    ],
+                  // Hold button
+                  GestureDetector(
+                    onTap: onToggleHold,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: Colors.purple[700],
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.purple.withOpacity(0.18),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.pause,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Hold',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                  // Hang up button
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onHangUp();
+                    },
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 80,
+                          height: 80,
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.redAccent,
+                                blurRadius: 16,
+                                offset: Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.call_end,
+                            color: Colors.white,
+                            size: 40,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Hang Up',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Speaker button
+                  GestureDetector(
+                    onTap: onToggleSpeaker,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: isSpeakerOn
+                                ? Colors.orange
+                                : Colors.blue[800],
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.orange.withOpacity(0.18),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            isSpeakerOn ? Icons.volume_up : Icons.hearing,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          isSpeakerOn ? 'Speaker Off' : 'Speaker',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Transfer button
+                  GestureDetector(
+                    onTap: onTransferCall,
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: Colors.teal[700],
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.teal.withOpacity(0.18),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.swap_calls,
+                            color: Colors.white,
+                            size: 32,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'Transfer',
+                          style: TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildControlButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.18),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Icon(icon, color: Colors.white, size: 32),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(color: Colors.white70, fontSize: 14),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
