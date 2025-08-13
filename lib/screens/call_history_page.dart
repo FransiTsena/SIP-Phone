@@ -16,6 +16,11 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
   String _searchQuery = '';
   String _sortCriteria = 'date';
 
+  // Helper: get the original index from the master list for an item in a filtered/sorted list
+  int _originalIndexOf(Map<String, dynamic> call) {
+    return widget.callHistory.indexOf(call);
+  }
+
   Future<void> _exportCallHistory() async {
     try {
       final directory = await getApplicationDocumentsDirectory();
@@ -74,68 +79,19 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
     );
   }
 
-  Future<String> _getContactName(String phoneNumber) async {
-    // Simulate contact lookup (replace with actual API or database integration)
-    Map<String, String> contacts = {
-      '1234567890': 'Test Contact 1',
-      '0987654321': 'Test Contact 2',
-    };
-    return contacts[phoneNumber] ?? phoneNumber;
+  // Safer wrappers when we only know the reference (from filtered/sorted lists)
+  void _deleteCallByRef(Map<String, dynamic> call) {
+    final idx = _originalIndexOf(call);
+    if (idx >= 0) {
+      _deleteCall(idx);
+    }
   }
 
-  Widget _buildCallHistoryItem(Map<String, dynamic> call) {
-    return FutureBuilder<String>(
-      future: _getContactName(call['phoneNumber']),
-      builder: (context, snapshot) {
-        String displayName = snapshot.data ?? call['phoneNumber'];
-        return Card(
-          elevation: 4,
-          margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: ListTile(
-            leading: CircleAvatar(
-              child: Icon(
-                call['type'] == 'missed'
-                    ? Icons.call_missed
-                    : call['type'] == 'outgoing'
-                    ? Icons.call_made
-                    : Icons.call_received,
-                color: Colors.white,
-              ),
-            ),
-            title: Text(
-              displayName,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-            subtitle: Text(
-              formatTimeAgo(call['time']),
-              style: const TextStyle(color: Colors.grey),
-            ),
-            trailing: IconButton(
-              icon: Icon(
-                call['isFavorite'] ? Icons.favorite : Icons.favorite_border,
-                color: call['isFavorite'] ? Colors.red : Colors.grey,
-              ),
-              onPressed: () {
-                setState(() {
-                  call['isFavorite'] = !call['isFavorite'];
-                });
-              },
-            ),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CallDetailPage(callDetails: call),
-                ),
-              );
-            },
-          ),
-        );
-      },
-    );
+  void _toggleFavoriteByRef(Map<String, dynamic> call) {
+    final idx = _originalIndexOf(call);
+    if (idx >= 0) {
+      _toggleFavorite(idx);
+    }
   }
 
   Widget _buildCallStatistics() {
@@ -150,30 +106,41 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
         .where((call) => call['type'] == 'incoming')
         .length;
 
-    return Container(
-      padding: const EdgeInsets.all(16.0),
+    final scheme = Theme.of(context).colorScheme;
+    final cardColor = scheme.surface;
+    final border = BorderSide(color: scheme.outlineVariant, width: 1);
 
+    return Container(
+      decoration: BoxDecoration(
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.fromBorderSide(border),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          _buildStatisticTile('Total', totalCalls, Icons.call),
-          _buildStatisticTile(
-            'Missed',
-            missedCalls,
-            Icons.call_missed,
-            color: Colors.red,
+          Expanded(child: _buildStatisticTile('Total', totalCalls, Icons.call)),
+          Expanded(
+            child: _buildStatisticTile(
+              'Missed',
+              missedCalls,
+              Icons.call_missed_outgoing,
+            ),
           ),
-          _buildStatisticTile(
-            'Outgoing',
-            outgoingCalls,
-            Icons.call_made,
-            color: Colors.green,
+          Expanded(
+            child: _buildStatisticTile(
+              'Outgoing',
+              outgoingCalls,
+              Icons.call_made_outlined,
+            ),
           ),
-          _buildStatisticTile(
-            'Incoming',
-            incomingCalls,
-            Icons.call_received,
-            color: Colors.blue,
+          Expanded(
+            child: _buildStatisticTile(
+              'Incoming',
+              incomingCalls,
+              Icons.call_received_outlined,
+            ),
           ),
         ],
       ),
@@ -184,19 +151,28 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
     String label,
     int count,
     IconData icon, {
-    Color color = Colors.black,
+    Color? color,
   }) {
+    final scheme = Theme.of(context).colorScheme;
+    final iconColor = color ?? scheme.onSurfaceVariant;
+    final textColor = scheme.onSurface;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: color, size: 32),
-        const SizedBox(height: 8),
+        Icon(icon, color: iconColor, size: 22),
+        const SizedBox(height: 6),
         Text(
           '$count',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+            color: textColor,
+          ),
         ),
+        const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 14, color: Colors.black54),
+          style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
         ),
       ],
     );
@@ -213,7 +189,13 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
     filteredHistory.sort((a, b) {
       switch (_sortCriteria) {
         case 'date':
-          return (b['time'] ?? '').compareTo(a['time'] ?? '');
+          final ad =
+              DateTime.tryParse((a['time'] ?? '') as String) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              DateTime.tryParse((b['time'] ?? '') as String) ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bd.compareTo(ad); // newest first
         case 'type':
           return (a['type'] ?? '').compareTo(b['type'] ?? '');
         case 'duration':
@@ -223,141 +205,337 @@ class _CallHistoryPageState extends State<CallHistoryPage> {
       }
     });
 
+    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        elevation: 0,
-        title: Text(
-          'Call History',
-          style: Theme.of(context).textTheme.headlineMedium,
-        ),
-        centerTitle: true,
+        title: const Text('Call History'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.download),
-            tooltip: 'Export Call History',
-            onPressed: _exportCallHistory,
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete),
-            tooltip: 'Clear Call History',
-            onPressed: _clearCallHistory,
+          PopupMenuButton<String>(
+            tooltip: 'Options',
+            onSelected: (v) {
+              switch (v) {
+                case 'export':
+                  _exportCallHistory();
+                  break;
+                case 'clear':
+                  _clearCallHistory();
+                  break;
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'export', child: Text('Export CSV')),
+              PopupMenuItem(value: 'clear', child: Text('Clear all')),
+            ],
           ),
         ],
       ),
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _buildCallStatistics(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            // Search field
             TextField(
               decoration: InputDecoration(
                 hintText: 'Search by number',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
+                prefixIcon: const Icon(Icons.search),
+                isDense: true,
+                filled: true,
+                fillColor: scheme.surface,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
                 ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: scheme.outlineVariant),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: scheme.outlineVariant),
+                ),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Clear',
+                        icon: const Icon(Icons.close),
+                        onPressed: () => setState(() => _searchQuery = ''),
+                      ),
               ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
+              onChanged: (value) => setState(() => _searchQuery = value),
             ),
-            const SizedBox(height: 16),
-            DropdownButton<String>(
-              value: _sortCriteria,
-              items: const [
-                DropdownMenuItem(value: 'date', child: Text('Sort by Date')),
-                DropdownMenuItem(value: 'type', child: Text('Sort by Type')),
-                DropdownMenuItem(
-                  value: 'duration',
-                  child: Text('Sort by Duration'),
+            const SizedBox(height: 8),
+            // Sorting chips
+            Wrap(
+              spacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Date'),
+                  selected: _sortCriteria == 'date',
+                  onSelected: (_) => setState(() => _sortCriteria = 'date'),
+                ),
+                ChoiceChip(
+                  label: const Text('Type'),
+                  selected: _sortCriteria == 'type',
+                  onSelected: (_) => setState(() => _sortCriteria = 'type'),
+                ),
+                ChoiceChip(
+                  label: const Text('Duration'),
+                  selected: _sortCriteria == 'duration',
+                  onSelected: (_) => setState(() => _sortCriteria = 'duration'),
                 ),
               ],
-              onChanged: (value) {
-                setState(() {
-                  _sortCriteria = value ?? 'date';
-                });
-              },
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            // List
             Expanded(
-              child: Card(
-                elevation: 2,
-                shape: RoundedRectangleBorder(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: scheme.surface,
                   borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: scheme.outlineVariant, width: 1),
                 ),
                 child: filteredHistory.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No call history found.',
-                          style: TextStyle(fontSize: 18, color: Colors.black54),
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.history_toggle_off,
+                              size: 40,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No call history',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: scheme.onSurface,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Calls you make and receive will appear here.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
                       )
                     : ListView.separated(
-                        shrinkWrap: true,
                         physics: const BouncingScrollPhysics(),
                         itemCount: filteredHistory.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        separatorBuilder: (_, __) => Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: scheme.outlineVariant.withOpacity(.6),
+                        ),
                         itemBuilder: (context, i) {
                           final call = filteredHistory[i];
-                          final timeAgo = formatTimeAgo(
-                            DateTime.tryParse(call['time']) ?? DateTime.now(),
-                          );
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundColor: Theme.of(
-                                context,
-                              ).colorScheme.secondary,
-                              child: Icon(
-                                call['type'] == 'outgoing'
-                                    ? Icons.call_made
-                                    : call['type'] == 'incoming'
-                                    ? Icons.call_received
-                                    : Icons.call_missed,
-                                color: Colors.white,
-                              ),
+                          // Robust time display: prefer ISO -> format; else timeAgo; else raw string
+                          String timeAgo;
+                          final rawTime = call['time'];
+                          DateTime? dt;
+                          if (rawTime is String) {
+                            dt = DateTime.tryParse(rawTime);
+                          }
+                          if (dt != null) {
+                            timeAgo = formatTimeAgo(dt);
+                          } else if (call['timeAgo'] is String &&
+                              (call['timeAgo'] as String).isNotEmpty) {
+                            timeAgo = call['timeAgo'] as String;
+                          } else if (rawTime is String && rawTime.isNotEmpty) {
+                            timeAgo = rawTime; // may be already relative text
+                          } else {
+                            timeAgo = 'Just now';
+                          }
+                          final callType = (call['type'] ?? '').toString();
+
+                          IconData icon;
+                          switch (callType) {
+                            case 'outgoing':
+                              icon = Icons.north_east_rounded;
+                              break;
+                            case 'incoming':
+                              icon = Icons.south_west_rounded;
+                              break;
+                            case 'missed':
+                              icon = Icons.call_missed_outgoing_rounded;
+                              break;
+                            default:
+                              icon = Icons.call_outlined;
+                          }
+
+                          final isFav = (call['isFavorite'] ?? false) as bool;
+
+                          Color dotColor;
+                          switch (callType) {
+                            case 'outgoing':
+                              dotColor = scheme.primary.withOpacity(.6);
+                              break;
+                            case 'incoming':
+                              dotColor = scheme.tertiary.withOpacity(.6);
+                              break;
+                            case 'missed':
+                              dotColor = Colors.redAccent.withOpacity(.7);
+                              break;
+                            default:
+                              dotColor = scheme.onSurfaceVariant;
+                          }
+
+                          final leftBg = Container(
+                            alignment: Alignment.centerLeft,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            color: scheme.surfaceContainerHighest.withOpacity(
+                              .6,
                             ),
-                            title: Text(
-                              call['number'] ?? '',
-                              style: Theme.of(context).textTheme.bodyLarge,
-                            ),
-                            subtitle: Text(
-                              '${call['status'] ?? 'Unknown Status'}\n$timeAgo',
-                              style: Theme.of(context).textTheme.bodyMedium,
-                            ),
-                            isThreeLine: true,
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
+                            child: Row(
                               children: [
-                                IconButton(
-                                  icon: Icon(
-                                    call['isFavorite'] ?? false
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                  onPressed: () => _toggleFavorite(i),
+                                Icon(
+                                  isFav
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isFav
+                                      ? Colors.redAccent
+                                      : scheme.onSurfaceVariant,
                                 ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.delete,
-                                    color: Colors.red,
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Favorite',
+                                  style: TextStyle(
+                                    color: scheme.onSurfaceVariant,
                                   ),
-                                  onPressed: () => _deleteCall(i),
                                 ),
                               ],
                             ),
-                            onTap: () {
-                              Navigator.of(context).push(
+                          );
+
+                          final rightBg = Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            color: Colors.red.withOpacity(.08),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: const [
+                                Icon(
+                                  Icons.delete_outline,
+                                  color: Colors.redAccent,
+                                ),
+                                SizedBox(width: 8),
+                                Text(
+                                  'Delete',
+                                  style: TextStyle(color: Colors.redAccent),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          return Dismissible(
+                            key: ValueKey(call.hashCode ^ i),
+                            background: leftBg,
+                            secondaryBackground: rightBg,
+                            confirmDismiss: (direction) async {
+                              if (direction == DismissDirection.startToEnd) {
+                                _toggleFavoriteByRef(call);
+                                return false; // Keep item; we only toggled
+                              } else {
+                                _deleteCallByRef(call);
+                                return true; // Remove from list visually
+                              }
+                            },
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              leading: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: scheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: scheme.outlineVariant,
+                                  ),
+                                ),
+                                child: Icon(
+                                  icon,
+                                  color: scheme.onSurfaceVariant,
+                                ),
+                              ),
+                              title: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      (call['number'] ?? '') as String,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: scheme.onSurface,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: dotColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              subtitle: Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      '${call['status'] ?? 'Unknown'} • $timeAgo',
+                                      style: TextStyle(
+                                        color: scheme.onSurfaceVariant,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    tooltip: isFav ? 'Unfavorite' : 'Favorite',
+                                    icon: Icon(
+                                      isFav
+                                          ? Icons.favorite
+                                          : Icons.favorite_border,
+                                      color: isFav
+                                          ? Colors.redAccent
+                                          : scheme.onSurfaceVariant,
+                                    ),
+                                    onPressed: () => _toggleFavoriteByRef(call),
+                                  ),
+                                  IconButton(
+                                    tooltip: 'Delete',
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.redAccent,
+                                    ),
+                                    onPressed: () => _deleteCallByRef(call),
+                                  ),
+                                ],
+                              ),
+                              onTap: () => Navigator.of(context).push(
                                 MaterialPageRoute(
                                   builder: (context) =>
                                       CallDetailPage(callDetails: call),
                                 ),
-                              );
-                            },
+                              ),
+                            ),
                           );
                         },
                       ),

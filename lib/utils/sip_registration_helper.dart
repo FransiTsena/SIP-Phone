@@ -5,7 +5,7 @@ class SipRegistrationHelper {
   static UaSettings buildSettings({
     required String username,
     required String password,
-    String ip = '10.42.0.17',
+    required String ip,
   }) {
     final settings = UaSettings();
     settings.webSocketUrl = 'ws://$ip:8088/ws';

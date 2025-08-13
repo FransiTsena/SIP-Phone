@@ -48,12 +48,10 @@ class CallHistoryHelper {
         .map((e) {
           try {
             final entry = _parseMapString(e);
-            if (entry['time'] != null &&
-                DateTime.tryParse(entry['time']) != null) {
-              entry['time'] = formatTimeAgo(DateTime.parse(entry['time']));
-            } else {
-              entry['time'] = DateTime.now().toIso8601String();
-            }
+            // Keep original ISO time in 'time'; compute a separate 'timeAgo'
+            final iso = entry['time'];
+            final dt = (iso is String) ? DateTime.tryParse(iso) : null;
+            entry['timeAgo'] = dt != null ? formatTimeAgo(dt) : 'Just now';
             return entry;
           } catch (_) {
             return {};
@@ -86,7 +84,15 @@ class CallHistoryHelper {
     List<Map<String, dynamic>> sorted = List.from(history);
     switch (sortType) {
       case 'oldest':
-        sorted.sort((a, b) => (a['time'] ?? '').compareTo(b['time'] ?? ''));
+        sorted.sort((a, b) {
+          final ad =
+              DateTime.tryParse(a['time'] ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              DateTime.tryParse(b['time'] ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return ad.compareTo(bd);
+        });
         break;
       case 'missed':
         sorted.sort(
@@ -104,7 +110,15 @@ class CallHistoryHelper {
         break;
       case 'newest':
       default:
-        sorted.sort((a, b) => (b['time'] ?? '').compareTo(a['time'] ?? ''));
+        sorted.sort((a, b) {
+          final ad =
+              DateTime.tryParse(a['time'] ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              DateTime.tryParse(b['time'] ?? '') ??
+              DateTime.fromMillisecondsSinceEpoch(0);
+          return bd.compareTo(ad);
+        });
         break;
     }
     return sorted;

@@ -6,11 +6,11 @@ class IncomingCallPopup extends StatelessWidget {
   final VoidCallback onReject;
 
   const IncomingCallPopup({
-    Key? key,
+    super.key,
     required this.number,
     required this.onAccept,
     required this.onReject,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
